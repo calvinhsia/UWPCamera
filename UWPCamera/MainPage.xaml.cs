@@ -41,11 +41,23 @@ namespace UWPCamera
                 camCapUI.PhotoSettings.Format = CameraCaptureUIPhotoFormat.Jpeg;
                 var storageFile = await camCapUI.CaptureFileAsync(CameraCaptureUIMode.Photo);
                 var bmImage = new BitmapImage();
+                if (storageFile != null)
+                {
+                    using (var strm = await storageFile.OpenReadAsync())
+                    {
+                        bmImage.SetSource(strm);
+                    }
+                }
                 var relPanel = new RelativePanel();
                 var spCtrls = new StackPanel()
                 {
                     Orientation = Orientation.Horizontal
                 };
+                var img = new Image();
+                img.Source = bmImage;
+                img.MaxHeight = 200;
+                img.MaxWidth = 200;
+                spCtrls.Children.Add(img);
                 relPanel.Children.Add(spCtrls);
                 var sb = new StringBuilder();
                 var devices = await DeviceInformation.FindAllAsync(DeviceClass.VideoCapture);
