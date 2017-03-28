@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices.WindowsRuntime;
 using System.Text;
+using System.Threading.Tasks;
 using Windows.Devices.Enumeration;
 using Windows.Foundation;
 using Windows.Foundation.Collections;
@@ -40,12 +41,17 @@ namespace UWPCamera
             try
             {
                 _medCapture = new MediaCapture();
+                MediaCaptureInitializationSettings settings = new MediaCaptureInitializationSettings();
+
+
                 await _medCapture.InitializeAsync();
                 var relPanel = new RelativePanel();
                 var spCtrls = new StackPanel()
                 {
                     Orientation = Orientation.Horizontal
                 };
+                _img.HorizontalAlignment = HorizontalAlignment.Center;
+
                 //img.MaxHeight = 200;
                 //img.MaxWidth = 200;
                 relPanel.Children.Add(spCtrls);
@@ -64,10 +70,19 @@ namespace UWPCamera
                 spCtrls.Children.Add(_tb);
                 var tmr = new DispatcherTimer();
                 tmr.Interval = TimeSpan.FromSeconds(4);
-                tmr.Tick += (ot, et) =>
+                tmr.Tick += async (ot, et) =>
                  {
-                     _tb.Text = DateTime.Now.ToString("MM/dd/yy hh:mm:ss tt");
-                     TakePictureAsync();
+                     try
+                     {
+                         _tb.Text = DateTime.Now.ToString("MM/dd/yy hh:mm:ss tt");
+                         var bmImage = await TakePictureAsync();
+                         _img.Source = bmImage;
+                         _img.HorizontalAlignment = HorizontalAlignment.Center;
+                     }
+                     catch (Exception ex)
+                     {
+                         _tb.Text += ex.ToString();
+                     }
                  };
                 tmr.Start();
                 //var sb = new StringBuilder();
@@ -105,15 +120,16 @@ namespace UWPCamera
                 this.Content = new TextBlock() { Text = ex.ToString() };
             }
         }
-        async void TakePictureAsync()
+        async Task<BitmapImage> TakePictureAsync()
         {
-            var imgFmt = ImageEncodingProperties.CreateJpeg();
+            var imgFmt = ImageEncodingProperties.CreateJpegXR();
             LowLagPhotoCapture llCapture = await _medCapture.PrepareLowLagPhotoCaptureAsync(imgFmt);
             var photo = await llCapture.CaptureAsync();
             var bmImage = new BitmapImage();
 
             await bmImage.SetSourceAsync(photo.Frame);
-            _img.Source = bmImage;
+            await llCapture.FinishAsync();
+            return bmImage;
 
             //var camCapUI = new CameraCaptureUI();
             //camCapUI.PhotoSettings.AllowCropping = true;
