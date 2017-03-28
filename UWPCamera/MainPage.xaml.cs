@@ -8,6 +8,7 @@ using Windows.Devices.Enumeration;
 using Windows.Foundation;
 using Windows.Foundation.Collections;
 using Windows.Media.Capture;
+using Windows.Media.MediaProperties;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Controls.Primitives;
@@ -36,18 +37,27 @@ namespace UWPCamera
         {
             try
             {
-                var camCapUI = new CameraCaptureUI();
-                camCapUI.PhotoSettings.AllowCropping = true;
-                camCapUI.PhotoSettings.Format = CameraCaptureUIPhotoFormat.Jpeg;
-                var storageFile = await camCapUI.CaptureFileAsync(CameraCaptureUIMode.Photo);
+                var medCapture = new MediaCapture();
+                await medCapture.InitializeAsync();
+                var imgFmt = ImageEncodingProperties.CreateJpeg();
+                LowLagPhotoCapture llCapture = await medCapture.PrepareLowLagPhotoCaptureAsync(imgFmt);
+                var photo = await llCapture.CaptureAsync();
                 var bmImage = new BitmapImage();
-                if (storageFile != null)
-                {
-                    using (var strm = await storageFile.OpenReadAsync())
-                    {
-                        bmImage.SetSource(strm);
-                    }
-                }
+                await bmImage.SetSourceAsync(photo.Frame);
+
+
+                //var camCapUI = new CameraCaptureUI();
+                //camCapUI.PhotoSettings.AllowCropping = true;
+                //camCapUI.PhotoSettings.Format = CameraCaptureUIPhotoFormat.Jpeg;
+                //var storageFile = await camCapUI.CaptureFileAsync(CameraCaptureUIMode.Photo);
+                //var bmImage = new BitmapImage();
+                //if (storageFile != null)
+                //{
+                //    using (var strm = await storageFile.OpenReadAsync())
+                //    {
+                //        bmImage.SetSource(strm);
+                //    }
+                //}
                 var relPanel = new RelativePanel();
                 var spCtrls = new StackPanel()
                 {
