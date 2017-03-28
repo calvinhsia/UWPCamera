@@ -27,82 +27,112 @@ namespace UWPCamera
     /// </summary>
     public sealed partial class MainPage : Page
     {
+        Image _img;
         public MainPage()
         {
             this.InitializeComponent();
             this.Loaded += MainPage_Loaded;
         }
 
-        private async void MainPage_Loaded(object sender, RoutedEventArgs e)
+        private void MainPage_Loaded(object sender, RoutedEventArgs e)
         {
             try
             {
-                var medCapture = new MediaCapture();
-                await medCapture.InitializeAsync();
-                var imgFmt = ImageEncodingProperties.CreateJpeg();
-                LowLagPhotoCapture llCapture = await medCapture.PrepareLowLagPhotoCaptureAsync(imgFmt);
-                var photo = await llCapture.CaptureAsync();
-                var bmImage = new BitmapImage();
-                await bmImage.SetSourceAsync(photo.Frame);
-
-
-                //var camCapUI = new CameraCaptureUI();
-                //camCapUI.PhotoSettings.AllowCropping = true;
-                //camCapUI.PhotoSettings.Format = CameraCaptureUIPhotoFormat.Jpeg;
-                //var storageFile = await camCapUI.CaptureFileAsync(CameraCaptureUIMode.Photo);
-                //var bmImage = new BitmapImage();
-                //if (storageFile != null)
-                //{
-                //    using (var strm = await storageFile.OpenReadAsync())
-                //    {
-                //        bmImage.SetSource(strm);
-                //    }
-                //}
                 var relPanel = new RelativePanel();
                 var spCtrls = new StackPanel()
                 {
                     Orientation = Orientation.Horizontal
                 };
-                var img = new Image();
-                img.Source = bmImage;
-                img.MaxHeight = 200;
-                img.MaxWidth = 200;
-                spCtrls.Children.Add(img);
+                _img = new Image();
+                //img.MaxHeight = 200;
+                //img.MaxWidth = 200;
                 relPanel.Children.Add(spCtrls);
-                var sb = new StringBuilder();
-                var devices = await DeviceInformation.FindAllAsync(DeviceClass.VideoCapture);
-                foreach (var device in devices)
+                relPanel.Children.Add(_img);
+                RelativePanel.SetBelow(_img, spCtrls);
+                var btnTakePhoto = new Button()
                 {
-                    sb.AppendLine($"{device.Name}");
-                    if (device.Properties != null)
-                    {
-                        foreach (var prop in device.Properties)
-                        {
-                            sb.AppendLine($"  K={prop.Key}  V={prop.Value?.ToString()}");
-                        }
-                    }
-                }
-                sb.AppendLine("Done");
-                var txt = sb.ToString();
-                var vwr = new ScrollViewer();
-                RelativePanel.SetBelow(vwr, spCtrls);
-                var tb = new TextBlock()
-                {
-                    //Height = 200,
-                    Width = this.ActualWidth,
-                    //VerticalAlignment = VerticalAlignment.Stretch,
-                    TextWrapping = TextWrapping.Wrap,
+                    Content = "Take photo"
                 };
-                vwr.Content = tb;
-                relPanel.Children.Add(vwr);
+                btnTakePhoto.Click += (ob, eb) =>
+                {
+                    TakePictureAsync();
+                };
+                spCtrls.Children.Add(btnTakePhoto);
+                var btnQuit = new Button()
+                {
+                    Content = "Quit"
+                };
+                btnQuit.Click += (oq, eq) =>
+                  {
+                      Application.Current.Exit();
+                  };
+                spCtrls.Children.Add(btnQuit);
+                var tmr = new DispatcherTimer();
+                tmr.Interval = TimeSpan.FromSeconds(2);
+                tmr.Tick += (ot, et) =>
+                 {
+                     TakePictureAsync();
+                 };
+                tmr.Start();
+                //var sb = new StringBuilder();
+                //var devices = await DeviceInformation.FindAllAsync(DeviceClass.VideoCapture);
+                //foreach (var device in devices)
+                //{
+                //    sb.AppendLine($"{device.Name}");
+                //    if (device.Properties != null)
+                //    {
+                //        foreach (var prop in device.Properties)
+                //        {
+                //            sb.AppendLine($"  K={prop.Key}  V={prop.Value?.ToString()}");
+                //        }
+                //    }
+                //}
+                //sb.AppendLine("Done");
+                //var txt = sb.ToString();
+                //var vwr = new ScrollViewer();
+                //RelativePanel.SetBelow(vwr, spCtrls);
+                //var tb = new TextBlock()
+                //{
+                //    //Height = 200,
+                //    Width = this.ActualWidth,
+                //    //VerticalAlignment = VerticalAlignment.Stretch,
+                //    TextWrapping = TextWrapping.Wrap,
+                //};
+                //vwr.Content = tb;
+                //tb.Text = txt;
+                //relPanel.Children.Add(vwr);
                 this.Content = relPanel;
-                tb.Text = txt;
 
             }
             catch (Exception ex)
             {
                 this.Content = new TextBlock() { Text = ex.ToString() };
             }
+        }
+        async void TakePictureAsync()
+        {
+            var medCapture = new MediaCapture();
+            await medCapture.InitializeAsync();
+            var imgFmt = ImageEncodingProperties.CreateJpeg();
+            LowLagPhotoCapture llCapture = await medCapture.PrepareLowLagPhotoCaptureAsync(imgFmt);
+            var photo = await llCapture.CaptureAsync();
+            var bmImage = new BitmapImage();
+
+            await bmImage.SetSourceAsync(photo.Frame);
+            _img.Source = bmImage;
+
+            //var camCapUI = new CameraCaptureUI();
+            //camCapUI.PhotoSettings.AllowCropping = true;
+            //camCapUI.PhotoSettings.Format = CameraCaptureUIPhotoFormat.Jpeg;
+            //var storageFile = await camCapUI.CaptureFileAsync(CameraCaptureUIMode.Photo);
+            //var bmImage = new BitmapImage();
+            //if (storageFile != null)
+            //{
+            //    using (var strm = await storageFile.OpenReadAsync())
+            //    {
+            //        bmImage.SetSource(strm);
+            //    }
+            //}
         }
     }
 }
