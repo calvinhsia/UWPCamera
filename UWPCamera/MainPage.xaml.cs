@@ -34,11 +34,13 @@ namespace UWPCamera
             this.InitializeComponent();
             this.Loaded += MainPage_Loaded;
         }
-
-        private void MainPage_Loaded(object sender, RoutedEventArgs e)
+        MediaCapture _medCapture;
+        private async void MainPage_Loaded(object sender, RoutedEventArgs e)
         {
             try
             {
+                _medCapture = new MediaCapture();
+                await _medCapture.InitializeAsync();
                 var relPanel = new RelativePanel();
                 var spCtrls = new StackPanel()
                 {
@@ -61,7 +63,7 @@ namespace UWPCamera
                 spCtrls.Children.Add(btnQuit);
                 spCtrls.Children.Add(_tb);
                 var tmr = new DispatcherTimer();
-                tmr.Interval = TimeSpan.FromSeconds(2);
+                tmr.Interval = TimeSpan.FromSeconds(4);
                 tmr.Tick += (ot, et) =>
                  {
                      _tb.Text = DateTime.Now.ToString("MM/dd/yy hh:mm:ss tt");
@@ -105,10 +107,8 @@ namespace UWPCamera
         }
         async void TakePictureAsync()
         {
-            var medCapture = new MediaCapture();
-            await medCapture.InitializeAsync();
             var imgFmt = ImageEncodingProperties.CreateJpeg();
-            LowLagPhotoCapture llCapture = await medCapture.PrepareLowLagPhotoCaptureAsync(imgFmt);
+            LowLagPhotoCapture llCapture = await _medCapture.PrepareLowLagPhotoCaptureAsync(imgFmt);
             var photo = await llCapture.CaptureAsync();
             var bmImage = new BitmapImage();
 
