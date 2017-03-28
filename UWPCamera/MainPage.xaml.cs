@@ -27,7 +27,8 @@ namespace UWPCamera
     /// </summary>
     public sealed partial class MainPage : Page
     {
-        Image _img;
+        Image _img = new Image();
+        TextBlock _tb = new TextBlock();
         public MainPage()
         {
             this.InitializeComponent();
@@ -43,21 +44,12 @@ namespace UWPCamera
                 {
                     Orientation = Orientation.Horizontal
                 };
-                _img = new Image();
                 //img.MaxHeight = 200;
                 //img.MaxWidth = 200;
                 relPanel.Children.Add(spCtrls);
                 relPanel.Children.Add(_img);
                 RelativePanel.SetBelow(_img, spCtrls);
-                var btnTakePhoto = new Button()
-                {
-                    Content = "Take photo"
-                };
-                btnTakePhoto.Click += (ob, eb) =>
-                {
-                    TakePictureAsync();
-                };
-                spCtrls.Children.Add(btnTakePhoto);
+
                 var btnQuit = new Button()
                 {
                     Content = "Quit"
@@ -67,10 +59,12 @@ namespace UWPCamera
                       Application.Current.Exit();
                   };
                 spCtrls.Children.Add(btnQuit);
+                spCtrls.Children.Add(_tb);
                 var tmr = new DispatcherTimer();
                 tmr.Interval = TimeSpan.FromSeconds(2);
                 tmr.Tick += (ot, et) =>
                  {
+                     _tb.Text = DateTime.Now.ToString("MM/dd/yy hh:mm:ss tt");
                      TakePictureAsync();
                  };
                 tmr.Start();
