@@ -30,77 +30,47 @@ namespace UWPCamera
     /// </summary>
     public sealed partial class MainPage : Page
     {
+        Button _btnSwitchCamera;
         Image _img = new Image();
         TextBlock _tb = new TextBlock();
         object _timerLock = new object();
+
+        int _cameratoUse = 0;
+        DeviceInformationCollection _cameraDevices = null;
+        MediaCapture _medCapture;
         public MainPage()
         {
             this.InitializeComponent();
             this.Loaded += MainPage_Loaded;
         }
-        MediaCapture _medCapture;
-        private async void MainPage_Loaded(object sender, RoutedEventArgs e)
+        private void MainPage_Loaded(object sender, RoutedEventArgs e)
         {
             try
             {
-                var cameratoUse = 0; // use first camera found
-                var cameraDevices = await DeviceInformation.FindAllAsync(DeviceClass.VideoCapture);
-                switch (cameraDevices.Count)
-                {
-                    case 0:
-                        this.Content = new TextBlock() { Text = "No camera found" };
-                        return;
-                    case 1:
-                        break;
-                    default:
-                        int ndx = 0;
-                        foreach (var cam in cameraDevices)
-                        { // high priority foir front camera
-                            if (cam.EnclosureLocation?.Panel == Windows.Devices.Enumeration.Panel.Front)
-                            {
-                                cameratoUse = ndx;
-                                break;
-                            }
-                            ndx++;
-                        }
-                        break;
-                }
-                Action<DeviceInformation> initMediaCapture = async (dev) =>
-                {
-                    _medCapture = new MediaCapture();
-                    MediaCaptureInitializationSettings settings = new MediaCaptureInitializationSettings();
-                    settings.VideoDeviceId = dev.Id;
-                    await _medCapture.InitializeAsync(settings);
-                };
-                initMediaCapture(cameraDevices[cameratoUse]);
                 var relPanel = new RelativePanel();
                 var spCtrls = new StackPanel()
                 {
                     Orientation = Orientation.Horizontal
                 };
                 _img.HorizontalAlignment = HorizontalAlignment.Center;
-                var btnSwitchCamera = new Button()
+                _btnSwitchCamera = new Button()
                 {
-                    Content = cameraDevices[cameratoUse].EnclosureLocation?.Panel,
-                    IsEnabled = cameraDevices.Count > 1
+                    Content = _cameraDevices?[_cameratoUse]?.EnclosureLocation?.Panel.ToString() ?? "One Camera",
+                    IsEnabled = _cameraDevices?.Count > 1,
+                    Width = 200
                 };
-                ToolTipService.SetToolTip(btnSwitchCamera, new ToolTip() { Content = "Click to switch camera front/back if available" });
-                spCtrls.Children.Add(btnSwitchCamera);
-                btnSwitchCamera.Click += (oc, ec) =>
+                ToolTipService.SetToolTip(_btnSwitchCamera, new ToolTip() { Content = "Click to switch camera front/back if available" });
+                spCtrls.Children.Add(_btnSwitchCamera);
+                _btnSwitchCamera.Click += (oc, ec) =>
                 {
-                    try
+                    lock (_timerLock)
                     {
-                        Monitor.Enter(_timerLock);
-                        if (++cameratoUse == cameraDevices.Count)
+                        if (++_cameratoUse == _cameraDevices.Count)
                         {
-                            cameratoUse = 0;
+                            _cameratoUse = 0;
                         }
-                        btnSwitchCamera.Content = cameraDevices[cameratoUse].EnclosureLocation?.Panel;
-                        initMediaCapture(cameraDevices[cameratoUse]);
-                    }
-                    finally
-                    {
-                        Monitor.Exit(_timerLock);
+                        _btnSwitchCamera.Content = _cameraDevices[_cameratoUse].EnclosureLocation?.Panel;
+                        initMediaCapture();
                     }
                 };
                 relPanel.Children.Add(spCtrls);
@@ -119,24 +89,11 @@ namespace UWPCamera
                 spCtrls.Children.Add(_tb);
                 var tmr = new DispatcherTimer();
                 tmr.Interval = TimeSpan.FromSeconds(4);
-                tmr.Tick += async (ot, et) =>
-                 {
-                     if (Monitor.TryEnter(_timerLock))
-                     {
-                         try
-                         {
-                             _tb.Text = DateTime.Now.ToString("MM/dd/yy hh:mm:ss tt");
-                             var bmImage = await TakePictureAsync();
-                             _img.Source = bmImage;
-                             _img.HorizontalAlignment = HorizontalAlignment.Center;
-                         }
-                         catch (Exception ex)
-                         {
-                             _tb.Text += ex.ToString();
-                         }
-                     }
-                     Monitor.Exit(_timerLock);
-                 };
+                LookForCameraAndTakeAPicture();
+                tmr.Tick += (ot, et) =>
+                {
+                    LookForCameraAndTakeAPicture();
+                };
                 tmr.Start();
                 //var sb = new StringBuilder();
                 //var devices = await DeviceInformation.FindAllAsync(DeviceClass.VideoCapture);
@@ -172,6 +129,89 @@ namespace UWPCamera
             {
                 this.Content = new TextBlock() { Text = ex.ToString() };
             }
+        }
+
+        async void LookForCameraAndTakeAPicture()
+        {
+            if (Monitor.TryEnter(_timerLock))
+            {
+                try
+                {
+                    _tb.Text = DateTime.Now.ToString("MM/dd/yy hh:mm:ss tt");
+                    if (_cameraDevices == null || _cameraDevices.Count == 0)
+                    {
+                        _cameratoUse = 0;
+                        _cameraDevices = await DeviceInformation.FindAllAsync(DeviceClass.VideoCapture);
+                        switch (_cameraDevices.Count)
+                        {
+                            case 0:
+                                _btnSwitchCamera.Content = " No camera found";
+                                break;
+                            case 1:
+                                _btnSwitchCamera.IsEnabled = false;
+                                break;
+                            default:
+                                _btnSwitchCamera.IsEnabled = true;
+                                int ndx = 0;
+                                foreach (var cam in _cameraDevices)
+                                { // high priority for front camera
+                                    if (cam.EnclosureLocation?.Panel == Windows.Devices.Enumeration.Panel.Front)
+                                    {
+                                        _cameratoUse = ndx;
+                                        break;
+                                    }
+                                    ndx++;
+                                }
+                                break;
+                        }
+                        if (_cameraDevices.Count > 0)
+                        {
+                            _btnSwitchCamera.Content = _cameraDevices[_cameratoUse].EnclosureLocation?.Panel.ToString() ?? "Camera";
+                            initMediaCapture();
+                            // take picture on next tick
+                        }
+                    }
+                    else
+                    {
+                        var bmImage = await TakePictureAsync();
+                        _img.Source = bmImage;
+                        _img.HorizontalAlignment = HorizontalAlignment.Center;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _tb.Text += ex.ToString();
+                    _cameraDevices = null; // will reset looking for camera
+                    var comex = ex as COMException;
+                    if (comex != null)
+                    {
+                        if (comex.Message.Contains("The video recording device is no longer present"))
+                        {
+                            // could be more specific
+                        }
+                    }
+                }
+            }
+            Monitor.Exit(_timerLock);
+        }
+
+        async void initMediaCapture()
+        {
+            try
+            {
+                Monitor.Enter(_timerLock);
+                _medCapture = new MediaCapture();
+                MediaCaptureInitializationSettings settings = new MediaCaptureInitializationSettings();
+                //settings.StreamingCaptureMode = StreamingCaptureMode.AudioAndVideo;
+                //settings.PhotoCaptureSource = PhotoCaptureSource.VideoPreview;
+                settings.VideoDeviceId = _cameraDevices[_cameratoUse].Id;
+                await _medCapture.InitializeAsync(settings);
+            }
+            finally
+            {
+                Monitor.Exit(_timerLock);
+            }
+            //                    var exposuretime = _medCapture.VideoDeviceController.ExposureControl.Value;
         }
 
         async Task<BitmapImage> TakePictureAsync()
