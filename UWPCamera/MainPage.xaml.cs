@@ -2,8 +2,10 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.WindowsRuntime;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Windows.Devices.Enumeration;
 using Windows.Foundation;
@@ -30,6 +32,7 @@ namespace UWPCamera
     {
         Image _img = new Image();
         TextBlock _tb = new TextBlock();
+        object _timerLock = new object();
         public MainPage()
         {
             this.InitializeComponent();
@@ -40,20 +43,66 @@ namespace UWPCamera
         {
             try
             {
-                _medCapture = new MediaCapture();
-                MediaCaptureInitializationSettings settings = new MediaCaptureInitializationSettings();
-
-
-                await _medCapture.InitializeAsync();
+                var cameratoUse = 0; // use first camera found
+                var cameraDevices = await DeviceInformation.FindAllAsync(DeviceClass.VideoCapture);
+                switch (cameraDevices.Count)
+                {
+                    case 0:
+                        this.Content = new TextBlock() { Text = "No camera found" };
+                        return;
+                    case 1:
+                        break;
+                    default:
+                        int ndx = 0;
+                        foreach (var cam in cameraDevices)
+                        { // high priority foir front camera
+                            if (cam.EnclosureLocation?.Panel == Windows.Devices.Enumeration.Panel.Front)
+                            {
+                                cameratoUse = ndx;
+                                break;
+                            }
+                            ndx++;
+                        }
+                        break;
+                }
+                Action<DeviceInformation> initMediaCapture = async (dev) =>
+                {
+                    _medCapture = new MediaCapture();
+                    MediaCaptureInitializationSettings settings = new MediaCaptureInitializationSettings();
+                    settings.VideoDeviceId = dev.Id;
+                    await _medCapture.InitializeAsync(settings);
+                };
+                initMediaCapture(cameraDevices[cameratoUse]);
                 var relPanel = new RelativePanel();
                 var spCtrls = new StackPanel()
                 {
                     Orientation = Orientation.Horizontal
                 };
                 _img.HorizontalAlignment = HorizontalAlignment.Center;
-
-                //img.MaxHeight = 200;
-                //img.MaxWidth = 200;
+                var btnSwitchCamera = new Button()
+                {
+                    Content = cameraDevices[cameratoUse].EnclosureLocation?.Panel,
+                    IsEnabled = cameraDevices.Count > 1
+                };
+                ToolTipService.SetToolTip(btnSwitchCamera, new ToolTip() { Content = "Click to switch camera front/back if available" });
+                spCtrls.Children.Add(btnSwitchCamera);
+                btnSwitchCamera.Click += (oc, ec) =>
+                {
+                    try
+                    {
+                        Monitor.Enter(_timerLock);
+                        if (++cameratoUse == cameraDevices.Count)
+                        {
+                            cameratoUse = 0;
+                        }
+                        btnSwitchCamera.Content = cameraDevices[cameratoUse].EnclosureLocation?.Panel;
+                        initMediaCapture(cameraDevices[cameratoUse]);
+                    }
+                    finally
+                    {
+                        Monitor.Exit(_timerLock);
+                    }
+                };
                 relPanel.Children.Add(spCtrls);
                 relPanel.Children.Add(_img);
                 RelativePanel.SetBelow(_img, spCtrls);
@@ -72,17 +121,21 @@ namespace UWPCamera
                 tmr.Interval = TimeSpan.FromSeconds(4);
                 tmr.Tick += async (ot, et) =>
                  {
-                     try
+                     if (Monitor.TryEnter(_timerLock))
                      {
-                         _tb.Text = DateTime.Now.ToString("MM/dd/yy hh:mm:ss tt");
-                         var bmImage = await TakePictureAsync();
-                         _img.Source = bmImage;
-                         _img.HorizontalAlignment = HorizontalAlignment.Center;
+                         try
+                         {
+                             _tb.Text = DateTime.Now.ToString("MM/dd/yy hh:mm:ss tt");
+                             var bmImage = await TakePictureAsync();
+                             _img.Source = bmImage;
+                             _img.HorizontalAlignment = HorizontalAlignment.Center;
+                         }
+                         catch (Exception ex)
+                         {
+                             _tb.Text += ex.ToString();
+                         }
                      }
-                     catch (Exception ex)
-                     {
-                         _tb.Text += ex.ToString();
-                     }
+                     Monitor.Exit(_timerLock);
                  };
                 tmr.Start();
                 //var sb = new StringBuilder();
@@ -120,10 +173,11 @@ namespace UWPCamera
                 this.Content = new TextBlock() { Text = ex.ToString() };
             }
         }
+
         async Task<BitmapImage> TakePictureAsync()
         {
-            var imgFmt = ImageEncodingProperties.CreateJpegXR();
-            LowLagPhotoCapture llCapture = await _medCapture.PrepareLowLagPhotoCaptureAsync(imgFmt);
+            var imgFmt = ImageEncodingProperties.CreateJpeg();
+            var llCapture = await _medCapture.PrepareLowLagPhotoCaptureAsync(imgFmt);
             var photo = await llCapture.CaptureAsync();
             var bmImage = new BitmapImage();
 
