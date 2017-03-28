@@ -7,12 +7,14 @@ using System.Text;
 using Windows.Devices.Enumeration;
 using Windows.Foundation;
 using Windows.Foundation.Collections;
+using Windows.Media.Capture;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Controls.Primitives;
 using Windows.UI.Xaml.Data;
 using Windows.UI.Xaml.Input;
 using Windows.UI.Xaml.Media;
+using Windows.UI.Xaml.Media.Imaging;
 using Windows.UI.Xaml.Navigation;
 
 // The Blank Page item template is documented at https://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x409
@@ -34,6 +36,11 @@ namespace UWPCamera
         {
             try
             {
+                var camCapUI = new CameraCaptureUI();
+                camCapUI.PhotoSettings.AllowCropping = true;
+                camCapUI.PhotoSettings.Format = CameraCaptureUIPhotoFormat.Jpeg;
+                var storageFile = await camCapUI.CaptureFileAsync(CameraCaptureUIMode.Photo);
+                var bmImage = new BitmapImage();
                 var relPanel = new RelativePanel();
                 var spCtrls = new StackPanel()
                 {
@@ -41,22 +48,18 @@ namespace UWPCamera
                 };
                 relPanel.Children.Add(spCtrls);
                 var sb = new StringBuilder();
-                for (int i = 0; i < 100; i++)
+                var devices = await DeviceInformation.FindAllAsync(DeviceClass.VideoCapture);
+                foreach (var device in devices)
                 {
-                    sb.AppendLine($"xxx{i}");
+                    sb.AppendLine($"{device.Name}");
+                    if (device.Properties != null)
+                    {
+                        foreach (var prop in device.Properties)
+                        {
+                            sb.AppendLine($"  K={prop.Key}  V={prop.Value?.ToString()}");
+                        }
+                    }
                 }
-                //var devices = await DeviceInformation.FindAllAsync(DeviceClass.All);
-                //foreach (var device in devices)
-                //{
-                //    sb.AppendLine($"{device.Name} ID={device.Id} {device.ToString()}");
-                //    if (device.Properties != null)
-                //    {
-                //        foreach (var prop in device.Properties)
-                //        {
-                //            sb.AppendLine($"  K={prop.Key}  V={prop.Value?.ToString()}");
-                //        }
-                //    }
-                //}
                 sb.AppendLine("Done");
                 var txt = sb.ToString();
                 var vwr = new ScrollViewer();
@@ -72,6 +75,7 @@ namespace UWPCamera
                 relPanel.Children.Add(vwr);
                 this.Content = relPanel;
                 tb.Text = txt;
+
             }
             catch (Exception ex)
             {
