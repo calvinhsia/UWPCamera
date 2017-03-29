@@ -74,21 +74,29 @@ namespace UWPCamera
                     }
                 };
                 relPanel.Children.Add(spCtrls);
-                relPanel.Children.Add(_img);
-                RelativePanel.SetBelow(_img, spCtrls);
-
+                var tbInterval = new TextBox()
+                {
+                    Text = "5"
+                };
+                spCtrls.Children.Add(tbInterval);
                 var btnQuit = new Button()
                 {
                     Content = "Quit"
                 };
+                spCtrls.Children.Add(btnQuit);
                 btnQuit.Click += (oq, eq) =>
                   {
                       Application.Current.Exit();
                   };
-                spCtrls.Children.Add(btnQuit);
                 spCtrls.Children.Add(_tb);
+                relPanel.Children.Add(_img);
+                RelativePanel.SetBelow(_img, spCtrls);
                 var tmr = new DispatcherTimer();
                 tmr.Interval = TimeSpan.FromSeconds(4);
+                tbInterval.TextChanged += (otb, etb) =>
+                 {
+                     tmr.Interval = TimeSpan.FromSeconds(double.Parse(tbInterval.Text));
+                 };
                 LookForCameraAndTakeAPicture();
                 tmr.Tick += (ot, et) =>
                 {
