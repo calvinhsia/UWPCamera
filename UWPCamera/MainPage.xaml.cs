@@ -76,7 +76,7 @@ namespace UWPCamera
                     }
                     );
                 deviceWatcher.Stopped += new TypedEventHandler<DeviceWatcher, object>(
-                    (wat, obj)=>
+                    (wat, obj) =>
                     {
                         deviceWatcher.Start();
                     }
@@ -128,14 +128,16 @@ namespace UWPCamera
                 RelativePanel.SetBelow(_img, spCtrls);
                 var tmr = new DispatcherTimer();
                 tmr.Interval = TimeSpan.FromSeconds(4);
-                tbInterval.TextChanged += (otb, etb) =>
+                tbInterval.LostFocus += (otb, etb) =>
                  {
                      tmr.Interval = TimeSpan.FromSeconds(double.Parse(tbInterval.Text));
                  };
-                LookForCameraOrTakeAPicture();
                 tmr.Tick += (ot, et) =>
                 {
-                    LookForCameraOrTakeAPicture();
+                    lock (_timerLock)
+                    {
+                        LookForCameraOrTakeAPicture();
+                    }
                 };
                 tmr.Start();
                 //var sb = new StringBuilder();
@@ -176,66 +178,62 @@ namespace UWPCamera
 
         async void LookForCameraOrTakeAPicture()
         {
-            if (Monitor.TryEnter(_timerLock))
+            try
             {
-                try
+                _tb.Text = DateTime.Now.ToString("MM/dd/yy hh:mm:ss tt");
+                if (_cameraDevices == null || _cameraDevices.Count == 0)
                 {
-                    _tb.Text = DateTime.Now.ToString("MM/dd/yy hh:mm:ss tt");
-                    if (_cameraDevices == null || _cameraDevices.Count == 0)
+                    _cameratoUse = 0;
+                    _cameraDevices = await DeviceInformation.FindAllAsync(DeviceClass.VideoCapture);
+                    switch (_cameraDevices.Count)
                     {
-                        _cameratoUse = 0;
-                        _cameraDevices = await DeviceInformation.FindAllAsync(DeviceClass.VideoCapture);
-                        switch (_cameraDevices.Count)
-                        {
-                            case 0:
-                                _btnSwitchCamera.Content = " No camera found";
-                                break;
-                            case 1:
-                                _btnSwitchCamera.IsEnabled = false;
-                                break;
-                            default:
-                                _btnSwitchCamera.IsEnabled = true;
-                                int ndx = 0;
-                                foreach (var cam in _cameraDevices)
-                                { // high priority for front camera
-                                    if (cam.EnclosureLocation?.Panel == Windows.Devices.Enumeration.Panel.Front)
-                                    {
-                                        _cameratoUse = ndx;
-                                        break;
-                                    }
-                                    ndx++;
+                        case 0:
+                            _btnSwitchCamera.Content = " No camera found";
+                            break;
+                        case 1:
+                            _btnSwitchCamera.IsEnabled = false;
+                            break;
+                        default:
+                            _btnSwitchCamera.IsEnabled = true;
+                            int ndx = 0;
+                            foreach (var cam in _cameraDevices)
+                            { // high priority for front camera
+                                if (cam.EnclosureLocation?.Panel == Windows.Devices.Enumeration.Panel.Front)
+                                {
+                                    _cameratoUse = ndx;
+                                    break;
                                 }
-                                break;
-                        }
-                        if (_cameraDevices.Count > 0)
-                        {
-                            SetBtnSwitchContent();
-                            initMediaCapture();
-                            // take picture on next tick
-                        }
+                                ndx++;
+                            }
+                            break;
                     }
-                    else
+                    if (_cameraDevices.Count > 0)
                     {
-                        var bmImage = await TakePictureAsync();
-                        _img.Source = bmImage;
-                        _img.HorizontalAlignment = HorizontalAlignment.Center;
+                        SetBtnSwitchContent();
+                        initMediaCapture();
+                        // take picture on next tick
                     }
                 }
-                catch (Exception ex)
+                else
                 {
-                    _tb.Text += ex.ToString();
-                    _cameraDevices = null; // will reset looking for camera
-                    var comex = ex as COMException;
-                    if (comex != null)
+                    var bmImage = await TakePictureAsync();
+                    _img.Source = bmImage;
+                    _img.HorizontalAlignment = HorizontalAlignment.Center;
+                }
+            }
+            catch (Exception ex)
+            {
+                _tb.Text += ex.ToString();
+                _cameraDevices = null; // will reset looking for camera
+                var comex = ex as COMException;
+                if (comex != null)
+                {
+                    if (comex.Message.Contains("The video recording device is no longer present"))
                     {
-                        if (comex.Message.Contains("The video recording device is no longer present"))
-                        {
-                            // could be more specific
-                        }
+                        // could be more specific
                     }
                 }
             }
-            Monitor.Exit(_timerLock);
         }
 
         void SetBtnSwitchContent()
