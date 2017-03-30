@@ -47,6 +47,41 @@ namespace UWPCamera
         {
             try
             {
+                var deviceWatcher = DeviceInformation.CreateWatcher(DeviceClass.VideoCapture);
+                deviceWatcher.Added += new TypedEventHandler<DeviceWatcher, DeviceInformation>(
+                        (wat, info) =>
+                        {
+                            lock (_timerLock)
+                            {
+                                _cameraDevices = null;// force reload
+                            }
+                        }
+                    );
+                deviceWatcher.Removed += new TypedEventHandler<DeviceWatcher, DeviceInformationUpdate>(
+                    (wat, info) =>
+                    {
+                        lock (_timerLock)
+                        {
+                            _cameraDevices = null;// force reload
+                        }
+                    }
+                    );
+                deviceWatcher.Updated += new TypedEventHandler<DeviceWatcher, DeviceInformationUpdate>(
+                    (wat, info) =>
+                    {
+                        lock (_timerLock)
+                        {
+                            _cameraDevices = null;// force reload
+                        }
+                    }
+                    );
+                deviceWatcher.Stopped += new TypedEventHandler<DeviceWatcher, object>(
+                    (wat, obj)=>
+                    {
+                        deviceWatcher.Start();
+                    }
+                    );
+                deviceWatcher.Start();
                 var relPanel = new RelativePanel();
                 var spCtrls = new StackPanel()
                 {
@@ -69,7 +104,7 @@ namespace UWPCamera
                         {
                             _cameratoUse = 0;
                         }
-                        _btnSwitchCamera.Content = _cameraDevices[_cameratoUse].EnclosureLocation?.Panel;
+                        SetBtnSwitchContent();
                         initMediaCapture();
                     }
                 };
@@ -97,10 +132,10 @@ namespace UWPCamera
                  {
                      tmr.Interval = TimeSpan.FromSeconds(double.Parse(tbInterval.Text));
                  };
-                LookForCameraAndTakeAPicture();
+                LookForCameraOrTakeAPicture();
                 tmr.Tick += (ot, et) =>
                 {
-                    LookForCameraAndTakeAPicture();
+                    LookForCameraOrTakeAPicture();
                 };
                 tmr.Start();
                 //var sb = new StringBuilder();
@@ -139,7 +174,7 @@ namespace UWPCamera
             }
         }
 
-        async void LookForCameraAndTakeAPicture()
+        async void LookForCameraOrTakeAPicture()
         {
             if (Monitor.TryEnter(_timerLock))
             {
@@ -174,7 +209,7 @@ namespace UWPCamera
                         }
                         if (_cameraDevices.Count > 0)
                         {
-                            _btnSwitchCamera.Content = _cameraDevices[_cameratoUse].EnclosureLocation?.Panel.ToString() ?? "Camera";
+                            SetBtnSwitchContent();
                             initMediaCapture();
                             // take picture on next tick
                         }
@@ -201,6 +236,22 @@ namespace UWPCamera
                 }
             }
             Monitor.Exit(_timerLock);
+        }
+
+        void SetBtnSwitchContent()
+        {
+            var camName = "None";
+        
+            var camLoc = _cameraDevices?[_cameratoUse]?.EnclosureLocation;
+            if (camLoc == null)
+            {
+                camName = "USB Cam";
+            }
+            else
+            {
+                camName = camLoc.Panel.ToString();
+            }
+            _btnSwitchCamera.Content = camName;
         }
 
         async void initMediaCapture()
