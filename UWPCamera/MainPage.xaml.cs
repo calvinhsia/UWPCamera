@@ -90,10 +90,10 @@ namespace UWPCamera
                 _img.HorizontalAlignment = HorizontalAlignment.Center;
                 _btnSwitchCamera = new Button()
                 {
-                    Content = _cameraDevices?[_cameratoUse]?.EnclosureLocation?.Panel.ToString() ?? "One Camera",
                     IsEnabled = _cameraDevices?.Count > 1,
                     Width = 200
                 };
+                SetBtnSwitchContent();
                 ToolTipService.SetToolTip(_btnSwitchCamera, new ToolTip() { Content = "Click to switch camera front/back if available" });
                 spCtrls.Children.Add(_btnSwitchCamera);
                 _btnSwitchCamera.Click += (oc, ec) =>
@@ -241,7 +241,6 @@ namespace UWPCamera
         void SetBtnSwitchContent()
         {
             var camName = "None";
-        
             var camLoc = _cameraDevices?[_cameratoUse]?.EnclosureLocation;
             if (camLoc == null)
             {
