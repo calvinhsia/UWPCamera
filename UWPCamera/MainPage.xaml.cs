@@ -136,7 +136,11 @@ namespace UWPCamera
                 spCtrls.Children.Add(btnQuit);
                 btnQuit.Click += (oq, eq) =>
                   {
-                      Application.Current.Exit();
+                      lock(_timerLock)
+                      {
+                          // make sure we're done with cam before exit
+                          Application.Current.Exit();
+                      }
                   };
                 spCtrls.Children.Add(_tb);
                 relPanel.Children.Add(_img);
