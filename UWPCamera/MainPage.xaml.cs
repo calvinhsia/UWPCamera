@@ -31,6 +31,7 @@ namespace UWPCamera
     public sealed partial class MainPage : Page
     {
         Button _btnSwitchCamera;
+        CheckBox _chkCycleCameras;
         Image _img = new Image();
         TextBlock _tb = new TextBlock();
         object _timerLock = new object();
@@ -91,23 +92,37 @@ namespace UWPCamera
                 _btnSwitchCamera = new Button()
                 {
                     IsEnabled = _cameraDevices?.Count > 1,
-                    Width = 200
+                    Width = 240
                 };
-                SetBtnSwitchContent();
-                ToolTipService.SetToolTip(_btnSwitchCamera, new ToolTip() { Content = "Click to switch camera front/back if available" });
-                spCtrls.Children.Add(_btnSwitchCamera);
-                _btnSwitchCamera.Click += (oc, ec) =>
+                SetBtnSwitchLabel();
+                ToolTipService.SetToolTip(_btnSwitchCamera, new ToolTip()
                 {
-                    lock (_timerLock)
-                    {
-                        if (++_cameratoUse == _cameraDevices.Count)
-                        {
-                            _cameratoUse = 0;
-                        }
-                        SetBtnSwitchContent();
-                        initMediaCapture();
-                    }
+                    Content = "Click to switch camera front/back if available"
+                });
+                spCtrls.Children.Add(_btnSwitchCamera);
+                _btnSwitchCamera.Click += async (oc, ec) =>
+                 {
+                     //can't use await inside a lock()
+                     Monitor.TryEnter(_timerLock);
+                     try
+                     {
+                         await initMediaCaptureAsync(fIncrementCameraTouse: true);
+                     }
+                     finally
+                     {
+                         Monitor.Exit(_timerLock);
+                     }
+                 };
+                _chkCycleCameras = new CheckBox()
+                {
+                    Content = "Cycle Cameras",
+                    IsChecked = false
                 };
+                ToolTipService.SetToolTip(_chkCycleCameras, new ToolTip()
+                {
+                    Content = "Automatically switch through all attached cameras"
+                });
+                spCtrls.Children.Add(_chkCycleCameras);
                 relPanel.Children.Add(spCtrls);
                 var tbInterval = new TextBox()
                 {
@@ -136,7 +151,7 @@ namespace UWPCamera
                 {
                     lock (_timerLock)
                     {
-                        LookForCameraOrTakeAPicture();
+                        LookForCameraAndTakeAPicture();
                     }
                 };
                 tmr.Start();
@@ -176,49 +191,28 @@ namespace UWPCamera
             }
         }
 
-        async void LookForCameraOrTakeAPicture()
+        async void LookForCameraAndTakeAPicture()
         {
             try
             {
+                bool fWasCycling = _chkCycleCameras.IsChecked == true;
                 _tb.Text = DateTime.Now.ToString("MM/dd/yy hh:mm:ss tt");
+                // do we need to initialize or reinitialize?
                 if (_cameraDevices == null || _cameraDevices.Count == 0)
                 {
-                    _cameratoUse = 0;
-                    _cameraDevices = await DeviceInformation.FindAllAsync(DeviceClass.VideoCapture);
-                    switch (_cameraDevices.Count)
-                    {
-                        case 0:
-                            _btnSwitchCamera.Content = " No camera found";
-                            break;
-                        case 1:
-                            _btnSwitchCamera.IsEnabled = false;
-                            break;
-                        default:
-                            _btnSwitchCamera.IsEnabled = true;
-                            int ndx = 0;
-                            foreach (var cam in _cameraDevices)
-                            { // high priority for front camera
-                                if (cam.EnclosureLocation?.Panel == Windows.Devices.Enumeration.Panel.Front)
-                                {
-                                    _cameratoUse = ndx;
-                                    break;
-                                }
-                                ndx++;
-                            }
-                            break;
-                    }
-                    if (_cameraDevices.Count > 0)
-                    {
-                        SetBtnSwitchContent();
-                        initMediaCapture();
-                        // take picture on next tick
-                    }
+                    _chkCycleCameras.IsChecked = false;
+                    await initializeCamerasAsync();
                 }
-                else
+                if (_chkCycleCameras.IsChecked == true)
                 {
-                    var bmImage = await TakePictureAsync();
-                    _img.Source = bmImage;
-                    _img.HorizontalAlignment = HorizontalAlignment.Center;
+                    await initMediaCaptureAsync(fIncrementCameraTouse: true);
+                }
+                var bmImage = await TakePictureAsync();
+                _img.Source = bmImage;
+                _img.HorizontalAlignment = HorizontalAlignment.Center;
+                if (fWasCycling && _cameraDevices?.Count > 1)
+                {
+                    _chkCycleCameras.IsChecked = true;
                 }
             }
             catch (Exception ex)
@@ -236,26 +230,75 @@ namespace UWPCamera
             }
         }
 
-        void SetBtnSwitchContent()
+        async Task initializeCamerasAsync()
         {
-            var camName = "None";
-            var camLoc = _cameraDevices?[_cameratoUse]?.EnclosureLocation;
-            if (camLoc == null)
+            _cameratoUse = 0;
+            _chkCycleCameras.IsChecked = false;
+            _chkCycleCameras.IsEnabled = false;
+            _cameraDevices = await DeviceInformation.FindAllAsync(DeviceClass.VideoCapture);
+            switch (_cameraDevices.Count)
             {
-                camName = "USB Cam";
+                case 0:
+                    _btnSwitchCamera.Content = " No camera found";
+                    _chkCycleCameras.IsChecked = false;
+                    break;
+                case 1:
+                    _chkCycleCameras.IsChecked = false;
+                    _btnSwitchCamera.IsEnabled = false;
+                    break;
+                default:
+                    _btnSwitchCamera.IsEnabled = true;
+                    int ndx = 0;
+                    foreach (var cam in _cameraDevices)
+                    { // high priority for front camera
+                        if (cam.EnclosureLocation?.Panel == Windows.Devices.Enumeration.Panel.Front)
+                        {
+                            _cameratoUse = ndx;
+                            break;
+                        }
+                        ndx++;
+                    }
+                    break;
             }
-            else
+            if (_cameraDevices.Count > 0)
             {
-                camName = camLoc.Panel.ToString();
+                _chkCycleCameras.IsEnabled = _cameraDevices.Count > 1;
+                await initMediaCaptureAsync();
             }
+        }
+
+        void SetBtnSwitchLabel()
+        {
+            var camName = "No Camera";
+            if (_cameraDevices != null )
+            {
+                camName = _cameraDevices[_cameratoUse].Name;
+            }
+            //var camLoc = _cameraDevices?[_cameratoUse]?.EnclosureLocation;
+            //if (camLoc == null)
+            //{
+            //    camName = $"USB Cam{_cameratoUse}";
+            //}
+            //else
+            //{
+            //    camName = camLoc.Panel.ToString();
+            //}
             _btnSwitchCamera.Content = camName;
         }
 
-        async void initMediaCapture()
+        async Task initMediaCaptureAsync(bool fIncrementCameraTouse = false)
         {
             try
             {
                 Monitor.Enter(_timerLock);
+                if (fIncrementCameraTouse)
+                {
+                    if (++_cameratoUse == _cameraDevices.Count)
+                    {
+                        _cameratoUse = 0;
+                    }
+                }
+                SetBtnSwitchLabel();
                 _medCapture = new MediaCapture();
                 MediaCaptureInitializationSettings settings = new MediaCaptureInitializationSettings();
                 //settings.StreamingCaptureMode = StreamingCaptureMode.AudioAndVideo;
