@@ -136,7 +136,7 @@ namespace UWPCamera
                 spCtrls.Children.Add(btnQuit);
                 btnQuit.Click += (oq, eq) =>
                   {
-                      lock(_timerLock)
+                      lock (_timerLock)
                       {
                           // make sure we're done with cam before exit
                           Application.Current.Exit();
@@ -151,11 +151,19 @@ namespace UWPCamera
                  {
                      tmr.Interval = TimeSpan.FromSeconds(double.Parse(tbInterval.Text));
                  };
-                tmr.Tick += (ot, et) =>
+                tmr.Tick += async (ot, et) =>
                 {
-                    lock (_timerLock)
+                    if (Monitor.TryEnter(_timerLock))
                     {
-                        LookForCameraAndTakeAPicture();
+                        try
+                        {
+                            await LookForCameraAndTakeAPicture();
+
+                        }
+                        finally
+                        {
+                            Monitor.Exit(_timerLock);
+                        }
                     }
                 };
                 tmr.Start();
@@ -195,7 +203,7 @@ namespace UWPCamera
             }
         }
 
-        async void LookForCameraAndTakeAPicture()
+        async Task LookForCameraAndTakeAPicture()
         {
             try
             {
@@ -267,6 +275,7 @@ namespace UWPCamera
             if (_cameraDevices.Count > 0)
             {
                 _chkCycleCameras.IsEnabled = _cameraDevices.Count > 1;
+                _chkCycleCameras.IsChecked = _cameraDevices.Count > 2;
                 await initMediaCaptureAsync();
             }
         }
@@ -274,19 +283,21 @@ namespace UWPCamera
         void SetBtnSwitchLabel()
         {
             var camName = "No Camera";
-            if (_cameraDevices != null )
+            if (_cameraDevices != null)
             {
-                camName = _cameraDevices[_cameratoUse].Name;
+                var dev = _cameraDevices[_cameratoUse];
+
+                var camLoc = dev.EnclosureLocation?.Panel.ToString();
+                //if (camLoc == null)
+                //{
+                //    camName = $"USB Cam{_cameratoUse}";
+                //}
+                //else
+                //{
+                //    camName = camLoc.Panel.ToString();
+                //}
+                camName = $"{dev.Name}{camLoc}";
             }
-            //var camLoc = _cameraDevices?[_cameratoUse]?.EnclosureLocation;
-            //if (camLoc == null)
-            //{
-            //    camName = $"USB Cam{_cameratoUse}";
-            //}
-            //else
-            //{
-            //    camName = camLoc.Panel.ToString();
-            //}
             _btnSwitchCamera.Content = camName;
         }
 
