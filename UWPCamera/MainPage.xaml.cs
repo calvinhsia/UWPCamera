@@ -38,7 +38,7 @@ namespace UWPCamera
 
         int _cameratoUse = 0;
         DeviceInformationCollection _cameraDevices = null;
-        MediaCapture _medCapture;
+        List<MediaCapture> _lstMedCapture = new List<MediaCapture>();
         public MainPage()
         {
             this.InitializeComponent();
@@ -219,6 +219,7 @@ namespace UWPCamera
                 if (_cameraDevices == null || _cameraDevices.Count == 0)
                 {
                     _chkCycleCameras.IsChecked = false;
+                    _lstMedCapture.Clear();
                     await initializeCamerasAsync();
                 } else if (_chkCycleCameras.IsChecked == true)
                 {
@@ -311,24 +312,29 @@ namespace UWPCamera
                     }
                 }
                 SetBtnSwitchLabel();
-                _medCapture = new MediaCapture();
-                MediaCaptureInitializationSettings settings = new MediaCaptureInitializationSettings();
-                //settings.StreamingCaptureMode = StreamingCaptureMode.AudioAndVideo;
-                //settings.PhotoCaptureSource = PhotoCaptureSource.VideoPreview;
-                settings.VideoDeviceId = _cameraDevices[_cameratoUse].Id;
-                await _medCapture.InitializeAsync(settings);
+                if (_cameratoUse >= _lstMedCapture.Count)
+                {
+                    var medCapture = new MediaCapture();
+                    MediaCaptureInitializationSettings settings = new MediaCaptureInitializationSettings();
+                    //settings.StreamingCaptureMode = StreamingCaptureMode.AudioAndVideo;
+                    //settings.PhotoCaptureSource = PhotoCaptureSource.VideoPreview;
+                    //                    var exposuretime = _medCapture.VideoDeviceController.ExposureControl.Value;
+                    settings.VideoDeviceId = _cameraDevices[_cameratoUse].Id;
+                    await medCapture.InitializeAsync(settings);
+                    _lstMedCapture.Add(medCapture);
+                }
             }
             finally
             {
                 Monitor.Exit(_timerLock);
             }
-            //                    var exposuretime = _medCapture.VideoDeviceController.ExposureControl.Value;
         }
 
         async Task<BitmapImage> TakePictureAsync()
         {
             var imgFmt = ImageEncodingProperties.CreateJpeg();
-            var llCapture = await _medCapture.PrepareLowLagPhotoCaptureAsync(imgFmt);
+            var medCapture = _lstMedCapture[_cameratoUse];
+            var llCapture = await medCapture.PrepareLowLagPhotoCaptureAsync(imgFmt);
             var photo = await llCapture.CaptureAsync();
             var bmImage = new BitmapImage();
 
