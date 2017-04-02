@@ -92,7 +92,7 @@ namespace UWPCamera
                 _btnSwitchCamera = new Button()
                 {
                     IsEnabled = _cameraDevices?.Count > 1,
-                    Width = 240
+                    Width = 260
                 };
                 SetBtnSwitchLabel();
                 ToolTipService.SetToolTip(_btnSwitchCamera, new ToolTip()
@@ -126,7 +126,7 @@ namespace UWPCamera
                 relPanel.Children.Add(spCtrls);
                 var tbInterval = new TextBox()
                 {
-                    Text = "5"
+                    Text = "7"
                 };
                 spCtrls.Children.Add(tbInterval);
                 var btnQuit = new Button()
@@ -151,18 +151,24 @@ namespace UWPCamera
                  {
                      tmr.Interval = TimeSpan.FromSeconds(double.Parse(tbInterval.Text));
                  };
+                bool fIsInTickRoutine = false;
                 tmr.Tick += async (ot, et) =>
                 {
-                    if (Monitor.TryEnter(_timerLock))
+                    if (!fIsInTickRoutine)
                     {
-                        try
+                        fIsInTickRoutine = true;
+                        if (Monitor.TryEnter(_timerLock))
                         {
-                            await LookForCameraAndTakeAPicture();
+                            try
+                            {
+                                await LookForCameraAndTakeAPicture();
 
-                        }
-                        finally
-                        {
-                            Monitor.Exit(_timerLock);
+                            }
+                            finally
+                            {
+                                Monitor.Exit(_timerLock);
+                                fIsInTickRoutine = false;
+                            }
                         }
                     }
                 };
@@ -214,8 +220,7 @@ namespace UWPCamera
                 {
                     _chkCycleCameras.IsChecked = false;
                     await initializeCamerasAsync();
-                }
-                if (_chkCycleCameras.IsChecked == true)
+                } else if (_chkCycleCameras.IsChecked == true)
                 {
                     await initMediaCaptureAsync(fIncrementCameraTouse: true);
                 }
@@ -275,7 +280,7 @@ namespace UWPCamera
             if (_cameraDevices.Count > 0)
             {
                 _chkCycleCameras.IsEnabled = _cameraDevices.Count > 1;
-                _chkCycleCameras.IsChecked = _cameraDevices.Count > 2;
+                _chkCycleCameras.IsChecked = _cameraDevices.Count > 1;
                 await initMediaCaptureAsync();
             }
         }
@@ -288,15 +293,7 @@ namespace UWPCamera
                 var dev = _cameraDevices[_cameratoUse];
 
                 var camLoc = dev.EnclosureLocation?.Panel.ToString();
-                //if (camLoc == null)
-                //{
-                //    camName = $"USB Cam{_cameratoUse}";
-                //}
-                //else
-                //{
-                //    camName = camLoc.Panel.ToString();
-                //}
-                camName = $"{dev.Name}{camLoc}";
+                camName = $"{_cameratoUse} {dev.Name} {camLoc}".Trim();
             }
             _btnSwitchCamera.Content = camName;
         }
