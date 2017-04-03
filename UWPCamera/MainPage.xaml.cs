@@ -15,6 +15,7 @@ using Windows.Media.MediaProperties;
 using Windows.Networking;
 using Windows.Networking.Sockets;
 using Windows.Storage.Streams;
+using Windows.System.Profile;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Controls.Primitives;
@@ -42,6 +43,7 @@ namespace UWPCamera
         int _cameratoUse = 0;
         DeviceInformationCollection _cameraDevices = null;
         List<MediaCapture> _lstMedCapture = new List<MediaCapture>();
+        bool _fUseNetworkTime = false;
         public MainPage()
         {
             this.InitializeComponent();
@@ -51,6 +53,12 @@ namespace UWPCamera
         {
             try
             {
+                if (AnalyticsInfo.VersionInfo.DeviceFamily == "Windows.IoT")
+                {
+                    // Windows.Desktop
+                    // on IOT
+                    _fUseNetworkTime = true;
+                }
                 Action resetCameras = () =>
                 {
                     lock (_timerLock)
@@ -167,18 +175,21 @@ namespace UWPCamera
                         {
                             try
                             {
-                                _tsSinceLastTimeCheck += tmr.Interval;
-                                if (_tsSinceLastTimeCheck.TotalMinutes >= 1)
+                                if (_fUseNetworkTime)
                                 {
-                                    // resync the clock
-                                    try
+                                    _tsSinceLastTimeCheck += tmr.Interval;
+                                    if (_tsSinceLastTimeCheck.TotalMinutes >= 1)
                                     {
-                                        _dtLastTimeCheck = await NtpClient.GetDateTimeAsync();
-                                        _tsSinceLastTimeCheck = TimeSpan.Zero;
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        _tbStatus.Text = ex.ToString(); // task cancelled exception
+                                        // resync the clock
+                                        try
+                                        {
+                                            _dtLastTimeCheck = await NtpClient.GetDateTimeAsync();
+                                            _tsSinceLastTimeCheck = TimeSpan.Zero;
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            _tbStatus.Text = ex.ToString(); // task cancelled exception
+                                        }
                                     }
                                 }
                                 await LookForCameraAndTakeAPicture();
@@ -236,6 +247,15 @@ namespace UWPCamera
             try
             {
                 bool fWasCycling = _chkCycleCameras.IsChecked == true;
+                DateTime now;
+                if (_fUseNetworkTime)
+                {
+                    now = DateTime.Now;
+                }
+                else
+                {
+                    now = CurrentDateTime;
+                }
                 _tbStatus.Text = CurrentDateTime.ToString("MM/dd/yy hh:mm:ss tt") + " " + _tsSinceLastTimeCheck.TotalMinutes.ToString("n1");
                 // do we need to initialize or reinitialize?
                 if (_cameraDevices == null || _cameraDevices.Count == 0)
@@ -345,7 +365,7 @@ namespace UWPCamera
                     settings.VideoDeviceId = _cameraDevices[_cameratoUse].Id;
                     medCapture.Failed += (o, e) =>
                     {
-                        _tbStatus.Text += e.Message;
+                        //                        _tbStatus.Text += e.Message;
                     };
                     await medCapture.InitializeAsync(settings);
                     _lstMedCapture.Add(medCapture);
