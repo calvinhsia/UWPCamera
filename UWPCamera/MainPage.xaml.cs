@@ -55,8 +55,9 @@ namespace UWPCamera
             {
                 if (AnalyticsInfo.VersionInfo.DeviceFamily == "Windows.IoT")
                 {
-                    // Windows.Desktop
-                    // on IOT
+                    // "Windows.Desktop"
+                    // "Windows.Mobile" (phone)
+                    // "Windows.IoT"
                     _fUseNetworkTime = true;
                 }
                 Action resetCameras = () =>
