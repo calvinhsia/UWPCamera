@@ -12,6 +12,9 @@ using Windows.Foundation;
 using Windows.Foundation.Collections;
 using Windows.Media.Capture;
 using Windows.Media.MediaProperties;
+using Windows.Networking;
+using Windows.Networking.Sockets;
+using Windows.Storage.Streams;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Controls.Primitives;
@@ -33,7 +36,7 @@ namespace UWPCamera
         Button _btnSwitchCamera;
         CheckBox _chkCycleCameras;
         Image _img = new Image();
-        TextBlock _tb = new TextBlock();
+        TextBlock _tbStatus = new TextBlock();
         object _timerLock = new object();
 
         int _cameratoUse = 0;
@@ -48,32 +51,30 @@ namespace UWPCamera
         {
             try
             {
+                Action resetCameras = () =>
+                {
+                    lock (_timerLock)
+                    {
+                        _cameraDevices = null;// force reload
+                    }
+                };
                 var deviceWatcher = DeviceInformation.CreateWatcher(DeviceClass.VideoCapture);
                 deviceWatcher.Added += new TypedEventHandler<DeviceWatcher, DeviceInformation>(
                         (wat, info) =>
                         {
-                            lock (_timerLock)
-                            {
-                                _cameraDevices = null;// force reload
-                            }
+                            resetCameras();
                         }
                     );
                 deviceWatcher.Removed += new TypedEventHandler<DeviceWatcher, DeviceInformationUpdate>(
                     (wat, info) =>
                     {
-                        lock (_timerLock)
-                        {
-                            _cameraDevices = null;// force reload
-                        }
+                        resetCameras();
                     }
                     );
                 deviceWatcher.Updated += new TypedEventHandler<DeviceWatcher, DeviceInformationUpdate>(
                     (wat, info) =>
                     {
-                        lock (_timerLock)
-                        {
-                            _cameraDevices = null;// force reload
-                        }
+                        resetCameras();
                     }
                     );
                 deviceWatcher.Stopped += new TypedEventHandler<DeviceWatcher, object>(
@@ -97,7 +98,7 @@ namespace UWPCamera
                 SetBtnSwitchLabel();
                 ToolTipService.SetToolTip(_btnSwitchCamera, new ToolTip()
                 {
-                    Content = "Click to switch camera front/back if available"
+                    Content = "Click to switch camera if available"
                 });
                 spCtrls.Children.Add(_btnSwitchCamera);
                 _btnSwitchCamera.Click += async (oc, ec) =>
@@ -142,16 +143,21 @@ namespace UWPCamera
                           Application.Current.Exit();
                       }
                   };
-                spCtrls.Children.Add(_tb);
+                spCtrls.Children.Add(_tbStatus);
                 relPanel.Children.Add(_img);
                 RelativePanel.SetBelow(_img, spCtrls);
                 var tmr = new DispatcherTimer();
                 tmr.Interval = TimeSpan.FromSeconds(4);
                 tbInterval.LostFocus += (otb, etb) =>
                  {
-                     tmr.Interval = TimeSpan.FromSeconds(double.Parse(tbInterval.Text));
+                     double n;
+                     if (double.TryParse(tbInterval.Text, out n))
+                     {
+                         tmr.Interval = TimeSpan.FromSeconds(n);
+                     }
                  };
                 bool fIsInTickRoutine = false;
+                _tsSinceLastTimeCheck = TimeSpan.FromDays(1); // force time check
                 tmr.Tick += async (ot, et) =>
                 {
                     if (!fIsInTickRoutine)
@@ -161,15 +167,28 @@ namespace UWPCamera
                         {
                             try
                             {
+                                _tsSinceLastTimeCheck += tmr.Interval;
+                                if (_tsSinceLastTimeCheck.TotalMinutes >= 1)
+                                {
+                                    // resync the clock
+                                    try
+                                    {
+                                        _dtLastTimeCheck = await NtpClient.GetDateTimeAsync();
+                                        _tsSinceLastTimeCheck = TimeSpan.Zero;
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        _tbStatus.Text = ex.ToString(); // task cancelled exception
+                                    }
+                                }
                                 await LookForCameraAndTakeAPicture();
-
                             }
                             finally
                             {
                                 Monitor.Exit(_timerLock);
-                                fIsInTickRoutine = false;
                             }
                         }
+                        fIsInTickRoutine = false;
                     }
                 };
                 tmr.Start();
@@ -209,19 +228,23 @@ namespace UWPCamera
             }
         }
 
+        TimeSpan _tsSinceLastTimeCheck;
+        DateTime _dtLastTimeCheck;
+        DateTime CurrentDateTime { get { return _dtLastTimeCheck + _tsSinceLastTimeCheck; } }
         async Task LookForCameraAndTakeAPicture()
         {
             try
             {
                 bool fWasCycling = _chkCycleCameras.IsChecked == true;
-                _tb.Text = DateTime.Now.ToString("MM/dd/yy hh:mm:ss tt");
+                _tbStatus.Text = CurrentDateTime.ToString("MM/dd/yy hh:mm:ss tt") + " " + _tsSinceLastTimeCheck.TotalMinutes.ToString("n1");
                 // do we need to initialize or reinitialize?
                 if (_cameraDevices == null || _cameraDevices.Count == 0)
                 {
                     _chkCycleCameras.IsChecked = false;
                     _lstMedCapture.Clear();
                     await initializeCamerasAsync();
-                } else if (_chkCycleCameras.IsChecked == true)
+                }
+                else if (_chkCycleCameras.IsChecked == true)
                 {
                     await initMediaCaptureAsync(fIncrementCameraTouse: true);
                 }
@@ -235,7 +258,7 @@ namespace UWPCamera
             }
             catch (Exception ex)
             {
-                _tb.Text += ex.ToString();
+                _tbStatus.Text += ex.ToString();
                 _cameraDevices = null; // will reset looking for camera
                 var comex = ex as COMException;
                 if (comex != null)
@@ -320,6 +343,10 @@ namespace UWPCamera
                     //settings.PhotoCaptureSource = PhotoCaptureSource.VideoPreview;
                     //                    var exposuretime = _medCapture.VideoDeviceController.ExposureControl.Value;
                     settings.VideoDeviceId = _cameraDevices[_cameratoUse].Id;
+                    medCapture.Failed += (o, e) =>
+                    {
+                        _tbStatus.Text += e.Message;
+                    };
                     await medCapture.InitializeAsync(settings);
                     _lstMedCapture.Add(medCapture);
                 }
@@ -332,8 +359,9 @@ namespace UWPCamera
 
         async Task<BitmapImage> TakePictureAsync()
         {
-            var imgFmt = ImageEncodingProperties.CreateJpeg();
+            // https://docs.microsoft.com/en-us/windows/uwp/audio-video-camera/basic-photo-video-and-audio-capture-with-mediacapture
             var medCapture = _lstMedCapture[_cameratoUse];
+            var imgFmt = ImageEncodingProperties.CreateJpeg();
             var llCapture = await medCapture.PrepareLowLagPhotoCaptureAsync(imgFmt);
             var photo = await llCapture.CaptureAsync();
             var bmImage = new BitmapImage();
@@ -354,6 +382,123 @@ namespace UWPCamera
             //        bmImage.SetSource(strm);
             //    }
             //}
+        }
+    }
+
+    //http://stackoverflow.com/questions/1193955/how-to-query-an-ntp-server-using-c
+    /// <summary>
+    /// Represents a client which can obtain accurate time via NTP protocol.
+    /// </summary>
+    public class NtpClient
+    {
+        private readonly TaskCompletionSource<DateTime> _resultCompletionSource;
+        public async static Task<DateTime> GetDateTimeAsync()
+        {
+            var ntpClient = new NtpClient();
+            return await ntpClient.GetNetworkTimeAsync();
+        }
+        /// <summary>
+        /// Creates a new instance of <see cref="NtpClient"/> class.
+        /// </summary>
+        public NtpClient()
+        {
+            _resultCompletionSource = new TaskCompletionSource<DateTime>();
+        }
+
+        /// <summary>
+        /// Gets accurate time using the NTP protocol with default timeout of 45 seconds.
+        /// </summary>
+        /// <returns>Network accurate <see cref="DateTime"/> value.</returns>
+        public async Task<DateTime> GetNetworkTimeAsync()
+        {
+            var utcNow = await GetNetworkTimeAsync(TimeSpan.FromSeconds(45));
+            var tzOffset = System.TimeZoneInfo.Local.GetUtcOffset(utcNow); // -7 hrs for Redmond with DST
+            var dtNow = utcNow + tzOffset;
+            return dtNow;
+        }
+
+        /// <summary>
+        /// Gets accurate time using the NTP protocol with default timeout of 45 seconds.
+        /// </summary>
+        /// <param name="timeout">Operation timeout.</param>
+        /// <returns>Network accurate <see cref="DateTime"/> value.</returns>
+        public async Task<DateTime> GetNetworkTimeAsync(TimeSpan timeout)
+        {
+            using (var socket = new DatagramSocket())
+            using (var ct = new CancellationTokenSource(timeout))
+            {
+                ct.Token.Register(() => _resultCompletionSource.TrySetCanceled());
+
+                socket.MessageReceived += OnSocketMessageReceived;
+                //The UDP port number assigned to NTP is 123
+                await socket.ConnectAsync(new HostName("pool.ntp.org"), "123");
+                using (var writer = new DataWriter(socket.OutputStream))
+                {
+                    // NTP message size is 16 bytes of the digest (RFC 2030)
+                    var ntpBuffer = new byte[48];
+
+                    // Setting the Leap Indicator, 
+                    // Version Number and Mode values
+                    // LI = 0 (no warning)
+                    // VN = 3 (IPv4 only)
+                    // Mode = 3 (Client Mode)
+                    ntpBuffer[0] = 0x1B;
+
+                    writer.WriteBytes(ntpBuffer);
+                    await writer.StoreAsync();
+                    var result = await _resultCompletionSource.Task;
+                    return result;
+                }
+            }
+        }
+
+        private void OnSocketMessageReceived(DatagramSocket sender, DatagramSocketMessageReceivedEventArgs args)
+        {
+            try
+            {
+                using (var reader = args.GetDataReader())
+                {
+                    byte[] response = new byte[48];
+                    reader.ReadBytes(response);
+                    _resultCompletionSource.TrySetResult(ParseNetworkTime(response));
+                }
+            }
+            catch (Exception ex)
+            {
+                _resultCompletionSource.TrySetException(ex);
+            }
+        }
+
+        private static DateTime ParseNetworkTime(byte[] rawData)
+        {
+            //Offset to get to the "Transmit Timestamp" field (time at which the reply 
+            //departed the server for the client, in 64-bit timestamp format."
+            const byte serverReplyTime = 40;
+
+            //Get the seconds part
+            ulong intPart = BitConverter.ToUInt32(rawData, serverReplyTime);
+
+            //Get the seconds fraction
+            ulong fractPart = BitConverter.ToUInt32(rawData, serverReplyTime + 4);
+
+            //Convert From big-endian to little-endian
+            intPart = SwapEndianness(intPart);
+            fractPart = SwapEndianness(fractPart);
+
+            var milliseconds = (intPart * 1000) + ((fractPart * 1000) / 0x100000000L);
+
+            //**UTC** time
+            DateTime networkDateTime = (new DateTime(1900, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)).AddMilliseconds((long)milliseconds);
+            return networkDateTime;
+        }
+
+        // stackoverflow.com/a/3294698/162671
+        private static uint SwapEndianness(ulong x)
+        {
+            return (uint)(((x & 0x000000ff) << 24) +
+                           ((x & 0x0000ff00) << 8) +
+                           ((x & 0x00ff0000) >> 8) +
+                           ((x & 0xff000000) >> 24));
         }
     }
 }
