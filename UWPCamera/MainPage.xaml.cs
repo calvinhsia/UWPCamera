@@ -1,15 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Runtime.InteropServices;
-using System.Runtime.InteropServices.WindowsRuntime;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Windows.Devices.Enumeration;
 using Windows.Foundation;
-using Windows.Foundation.Collections;
 using Windows.Media.Capture;
 using Windows.Media.MediaProperties;
 using Windows.Networking;
@@ -18,20 +13,11 @@ using Windows.Storage.Streams;
 using Windows.System.Profile;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
-using Windows.UI.Xaml.Controls.Primitives;
-using Windows.UI.Xaml.Data;
-using Windows.UI.Xaml.Input;
-using Windows.UI.Xaml.Media;
 using Windows.UI.Xaml.Media.Imaging;
-using Windows.UI.Xaml.Navigation;
 
-// The Blank Page item template is documented at https://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x409
 
 namespace UWPCamera
 {
-    /// <summary>
-    /// An empty page that can be used on its own or navigated to within a Frame.
-    /// </summary>
     public sealed partial class MainPage : Page
     {
         Button _btnSwitchCamera;
@@ -44,6 +30,7 @@ namespace UWPCamera
         DeviceInformationCollection _cameraDevices = null;
         List<MediaCapture> _lstMedCapture = new List<MediaCapture>();
         bool _fUseNetworkTime = false;
+
         public MainPage()
         {
             this.InitializeComponent();
@@ -69,29 +56,13 @@ namespace UWPCamera
                 };
                 var deviceWatcher = DeviceInformation.CreateWatcher(DeviceClass.VideoCapture);
                 deviceWatcher.Added += new TypedEventHandler<DeviceWatcher, DeviceInformation>(
-                        (wat, info) =>
-                        {
-                            resetCameras();
-                        }
-                    );
+                    (wat, info) => { resetCameras(); });
                 deviceWatcher.Removed += new TypedEventHandler<DeviceWatcher, DeviceInformationUpdate>(
-                    (wat, info) =>
-                    {
-                        resetCameras();
-                    }
-                    );
+                    (wat, info) => { resetCameras(); });
                 deviceWatcher.Updated += new TypedEventHandler<DeviceWatcher, DeviceInformationUpdate>(
-                    (wat, info) =>
-                    {
-                        resetCameras();
-                    }
-                    );
+                    (wat, info) => { resetCameras(); });
                 deviceWatcher.Stopped += new TypedEventHandler<DeviceWatcher, object>(
-                    (wat, obj) =>
-                    {
-                        deviceWatcher.Start();
-                    }
-                    );
+                    (wat, obj) => { deviceWatcher.Start(); });
                 deviceWatcher.Start();
                 var relPanel = new RelativePanel();
                 var spCtrls = new StackPanel()
@@ -110,18 +81,10 @@ namespace UWPCamera
                     Content = "Click to switch camera if available"
                 });
                 spCtrls.Children.Add(_btnSwitchCamera);
-                _btnSwitchCamera.Click += async (oc, ec) =>
+                _btnSwitchCamera.Click += (oc, ec) =>
                  {
-                     //can't use await inside a lock()
-                     Monitor.TryEnter(_timerLock);
-                     try
-                     {
-                         await initMediaCaptureAsync(fIncrementCameraTouse: true);
-                     }
-                     finally
-                     {
-                         Monitor.Exit(_timerLock);
-                     }
+                     IncrementCameraInUse();
+                     SetBtnSwitchLabel();
                  };
                 _chkCycleCameras = new CheckBox()
                 {
@@ -204,39 +167,22 @@ namespace UWPCamera
                     }
                 };
                 tmr.Start();
-                //var sb = new StringBuilder();
-                //var devices = await DeviceInformation.FindAllAsync(DeviceClass.VideoCapture);
-                //foreach (var device in devices)
-                //{
-                //    sb.AppendLine($"{device.Name}");
-                //    if (device.Properties != null)
-                //    {
-                //        foreach (var prop in device.Properties)
-                //        {
-                //            sb.AppendLine($"  K={prop.Key}  V={prop.Value?.ToString()}");
-                //        }
-                //    }
-                //}
-                //sb.AppendLine("Done");
-                //var txt = sb.ToString();
-                //var vwr = new ScrollViewer();
-                //RelativePanel.SetBelow(vwr, spCtrls);
-                //var tb = new TextBlock()
-                //{
-                //    //Height = 200,
-                //    Width = this.ActualWidth,
-                //    //VerticalAlignment = VerticalAlignment.Stretch,
-                //    TextWrapping = TextWrapping.Wrap,
-                //};
-                //vwr.Content = tb;
-                //tb.Text = txt;
-                //relPanel.Children.Add(vwr);
                 this.Content = relPanel;
-
             }
             catch (Exception ex)
             {
                 this.Content = new TextBlock() { Text = ex.ToString() };
+            }
+        }
+
+        void IncrementCameraInUse()
+        {
+            lock (_timerLock)
+            {
+                if (++_cameratoUse == _cameraDevices.Count)
+                {
+                    _cameratoUse = 0;
+                }
             }
         }
 
@@ -262,13 +208,13 @@ namespace UWPCamera
                 if (_cameraDevices == null || _cameraDevices.Count == 0)
                 {
                     _chkCycleCameras.IsChecked = false;
-                    _lstMedCapture.Clear();
                     await initializeCamerasAsync();
                 }
                 else if (_chkCycleCameras.IsChecked == true)
                 {
-                    await initMediaCaptureAsync(fIncrementCameraTouse: true);
+                    IncrementCameraInUse();
                 }
+                SetBtnSwitchLabel();
                 var bmImage = await TakePictureAsync();
                 _img.Source = bmImage;
                 _img.HorizontalAlignment = HorizontalAlignment.Center;
@@ -295,6 +241,7 @@ namespace UWPCamera
         async Task initializeCamerasAsync()
         {
             _cameratoUse = 0;
+            _lstMedCapture.Clear();
             _chkCycleCameras.IsChecked = false;
             _chkCycleCameras.IsEnabled = false;
             _cameraDevices = await DeviceInformation.FindAllAsync(DeviceClass.VideoCapture);
@@ -324,8 +271,18 @@ namespace UWPCamera
                     {
                         nFrontCamera = ndx;
                     }
-                    _cameratoUse = ndx;
-                    await initMediaCaptureAsync();
+                    var medCapture = new MediaCapture();
+                    MediaCaptureInitializationSettings settings = new MediaCaptureInitializationSettings();
+                    //settings.StreamingCaptureMode = StreamingCaptureMode.AudioAndVideo;
+                    //settings.PhotoCaptureSource = PhotoCaptureSource.VideoPreview;
+                    //                    var exposuretime = _medCapture.VideoDeviceController.ExposureControl.Value;
+                    settings.VideoDeviceId = _cameraDevices[ndx].Id;
+                    medCapture.Failed += (o, e) =>
+                    {
+                            //                        _tbStatus.Text += e.Message;
+                        };
+                    await medCapture.InitializeAsync(settings);
+                    _lstMedCapture.Add(medCapture);
                     ndx++;
                 }
                 if (nFrontCamera >= 0)
@@ -346,41 +303,6 @@ namespace UWPCamera
                 camName = $"{_cameratoUse} {dev.Name} {camLoc}".Trim();
             }
             _btnSwitchCamera.Content = camName;
-        }
-
-        async Task initMediaCaptureAsync(bool fIncrementCameraTouse = false)
-        {
-            try
-            {
-                Monitor.Enter(_timerLock);
-                if (fIncrementCameraTouse)
-                {
-                    if (++_cameratoUse == _cameraDevices.Count)
-                    {
-                        _cameratoUse = 0;
-                    }
-                }
-                SetBtnSwitchLabel();
-                if (_cameratoUse >= _lstMedCapture.Count)
-                {
-                    var medCapture = new MediaCapture();
-                    MediaCaptureInitializationSettings settings = new MediaCaptureInitializationSettings();
-                    //settings.StreamingCaptureMode = StreamingCaptureMode.AudioAndVideo;
-                    //settings.PhotoCaptureSource = PhotoCaptureSource.VideoPreview;
-                    //                    var exposuretime = _medCapture.VideoDeviceController.ExposureControl.Value;
-                    settings.VideoDeviceId = _cameraDevices[_cameratoUse].Id;
-                    medCapture.Failed += (o, e) =>
-                    {
-                        //                        _tbStatus.Text += e.Message;
-                    };
-                    await medCapture.InitializeAsync(settings);
-                    _lstMedCapture.Add(medCapture);
-                }
-            }
-            finally
-            {
-                Monitor.Exit(_timerLock);
-            }
         }
 
         async Task<BitmapImage> TakePictureAsync()
