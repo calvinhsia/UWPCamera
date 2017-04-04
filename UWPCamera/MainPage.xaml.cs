@@ -310,23 +310,28 @@ namespace UWPCamera
                     break;
                 default:
                     _btnSwitchCamera.IsEnabled = true;
-                    int ndx = 0;
-                    foreach (var cam in _cameraDevices)
-                    { // high priority for front camera
-                        if (cam.EnclosureLocation?.Panel == Windows.Devices.Enumeration.Panel.Front)
-                        {
-                            _cameratoUse = ndx;
-                            break;
-                        }
-                        ndx++;
-                    }
                     break;
             }
             if (_cameraDevices.Count > 0)
             {
                 _chkCycleCameras.IsEnabled = _cameraDevices.Count > 1;
                 _chkCycleCameras.IsChecked = _cameraDevices.Count > 1;
-                await initMediaCaptureAsync();
+                int ndx = 0;
+                int nFrontCamera = -1;
+                foreach (var cam in _cameraDevices)
+                { // high priority for front camera
+                    if (cam.EnclosureLocation?.Panel == Windows.Devices.Enumeration.Panel.Front)
+                    {
+                        nFrontCamera = ndx;
+                    }
+                    _cameratoUse = ndx;
+                    await initMediaCaptureAsync();
+                    ndx++;
+                }
+                if (nFrontCamera >= 0)
+                {
+                    _cameratoUse = nFrontCamera;
+                }
             }
         }
 
