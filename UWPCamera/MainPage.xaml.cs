@@ -197,11 +197,11 @@ namespace UWPCamera
                 DateTime now;
                 if (_fUseNetworkTime)
                 {
-                    now = DateTime.Now;
+                    now = CurrentDateTime;
                 }
                 else
                 {
-                    now = CurrentDateTime;
+                    now = DateTime.Now;
                 }
                 _tbStatus.Text = CurrentDateTime.ToString("MM/dd/yy hh:mm:ss tt") + " " + _tsSinceLastTimeCheck.TotalMinutes.ToString("n1");
                 // do we need to initialize or reinitialize?
