@@ -11,8 +11,10 @@ using Windows.Networking;
 using Windows.Networking.Sockets;
 using Windows.Storage.Streams;
 using Windows.System.Profile;
+using Windows.UI;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
+using Windows.UI.Xaml.Media;
 using Windows.UI.Xaml.Media.Imaging;
 
 
@@ -40,6 +42,7 @@ namespace UWPCamera
         {
             try
             {
+//                this.Background = new SolidColorBrush(Color.FromArgb(255,128, 128, 128));
                 if (AnalyticsInfo.VersionInfo.DeviceFamily == "Windows.IoT")
                 {
                     // "Windows.Desktop"
@@ -70,6 +73,7 @@ namespace UWPCamera
                     Orientation = Orientation.Horizontal
                 };
                 _img.HorizontalAlignment = HorizontalAlignment.Center;
+                _img.Stretch = Stretch.UniformToFill;
                 _btnSwitchCamera = new Button()
                 {
                     IsEnabled = _cameraDevices?.Count > 1,
@@ -203,7 +207,7 @@ namespace UWPCamera
                 {
                     now = DateTime.Now;
                 }
-                _tbStatus.Text = CurrentDateTime.ToString("MM/dd/yy hh:mm:ss tt") + " " + _tsSinceLastTimeCheck.TotalMinutes.ToString("n1");
+                _tbStatus.Text = now.ToString("MM/dd/yy hh:mm:ss tt") + " " + _tsSinceLastTimeCheck.TotalMinutes.ToString("n1");
                 // do we need to initialize or reinitialize?
                 if (_cameraDevices == null || _cameraDevices.Count == 0)
                 {
